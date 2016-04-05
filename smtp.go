@@ -1,15 +1,13 @@
 package gophermail
 
 import (
-    "crypto/tls"
+	"crypto/tls"
 	"net/smtp"
 )
 
-// SendMail connects to the server at addr, switches to TLS if possible,
-// authenticates with mechanism a if possible, and then sends the given Message.
-//
-// Based heavily on smtp.SendMail().
-func SendMail(addr string, a smtp.Auth, msg *Message) error {
+type SendFunc func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
+
+func SendMailWithFunc(addr string, a smtp.Auth, msg *Message, sendFn SendFunc) error {
 	msgBytes, err := msg.Bytes()
 	if err != nil {
 		return err
@@ -27,10 +25,16 @@ func SendMail(addr string, a smtp.Auth, msg *Message) error {
 	for _, address := range msg.Bcc {
 		to = append(to, address.Address)
 	}
-
-	return smtp.SendMail(addr, a, msg.From.Address, to, msgBytes)
+	return sendFn(addr, a, msg.From.Address, to, msgBytes)
 }
 
+// SendMail connects to the server at addr, switches to TLS if possible,
+// authenticates with mechanism a if possible, and then sends the given Message.
+//
+// Based heavily on smtp.SendMail().
+func SendMail(addr string, a smtp.Auth, msg *Message) error {
+	return SendMailWithFunc(addr, a, msg, smtp.SendMail)
+}
 
 // SendTLSMail does the same thing as SendMail, except with the added
 // option of providing a tls.Config
@@ -53,7 +57,7 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 		to = append(to, address.Address)
 	}
 
-    from := msg.From.String()
+	from := msg.From.String()
 
 	c, err := smtp.Dial(addr)
 	if err != nil {
@@ -62,9 +66,9 @@ func SendTLSMail(addr string, a smtp.Auth, msg *Message, cfg tls.Config) error {
 	defer c.Close()
 
 	if ok, _ := c.Extension("STARTTLS"); ok {
-        if err = c.StartTLS(&cfg); err != nil {
-            return err
-        }
+		if err = c.StartTLS(&cfg); err != nil {
+			return err
+		}
 	}
 
 	if a != nil {
